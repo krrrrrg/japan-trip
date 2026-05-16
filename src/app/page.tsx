@@ -342,157 +342,20 @@ export default function Home() {
 
       {/* ===== 예약정보 탭 ===== */}
       {activeTab === "bookings" && (
-        <div className="space-y-4">
-          {bookings.map((b) => {
-            if (b.type === "flight_go" || b.type === "flight_back") {
-              return (
-                <div
-                  key={b.id}
-                  className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">
-                      {b.type === "flight_go" ? "🛫" : "🛬"}
-                    </span>
-                    <span className="font-bold">{b.title as string}</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">항공사</span>
-                      <span className="font-medium">
-                        {b.airline as string} {b.flightNo as string}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">날짜</span>
-                      <span>{b.date as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">출발</span>
-                      <span>
-                        {b.departTime as string} {b.departure as string}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">도착</span>
-                      <span>
-                        {b.arriveTime as string} {b.arrival as string}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">예약번호</span>
-                      <span className="font-mono font-bold text-red-500">
-                        {b.pnr as string}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">탑승자</span>
-                      <span>{b.passengers as string}</span>
-                    </div>
-                    {typeof b.memo === "string" && b.memo && (
-                      <p className="text-xs text-orange-500 bg-orange-50 rounded-lg p-2 mt-2">
-                        {b.memo}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
-            if (b.type === "hotel") {
-              return (
-                <div
-                  key={b.id}
-                  className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">🏨</span>
-                    <span className="font-bold">{b.hotelName as string}</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">체크인</span>
-                      <span>{b.checkIn as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">체크아웃</span>
-                      <span>{b.checkOut as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">숙박</span>
-                      <span>{b.nights as number}박</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">예약번호</span>
-                      <span className="font-mono text-xs">{b.bookingNo as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">PIN</span>
-                      <span className="font-mono font-bold text-red-500">
-                        {b.pin as string}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">주소</span>
-                      <span className="text-xs text-right max-w-[60%]">
-                        {b.address as string}
-                      </span>
-                    </div>
-                    {typeof b.memo === "string" && b.memo && (
-                      <p className="text-xs text-blue-500 bg-blue-50 rounded-lg p-2 mt-2">
-                        {b.memo}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
-            if (b.type === "ticket") {
-              return (
-                <div
-                  key={b.id}
-                  className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">🎮</span>
-                    <span className="font-bold">{b.title as string}</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">장소</span>
-                      <span>{b.venue as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">날짜</span>
-                      <span>{b.date as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">시간</span>
-                      <span>{b.time as string}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">티켓 종류</span>
-                      <span>{b.ticketType as string}</span>
-                    </div>
-                    {Array.isArray(b.tickets) &&
-                      (b.tickets as { name: string; ticketId: string }[]).map(
-                        (t, i) => (
-                          <div key={i} className="flex justify-between">
-                            <span className="text-gray-400">{t.name}</span>
-                            <span className="font-mono text-xs text-red-500">
-                              {t.ticketId}
-                            </span>
-                          </div>
-                        )
-                      )}
-                  </div>
-                </div>
-              );
-            }
-
-            return null;
-          })}
+        <div className="space-y-3">
+          {bookings.map((b) => (
+            <a
+              key={b.id}
+              href={b.url as string}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-4 bg-white rounded-2xl p-5 shadow-sm border border-gray-100 active:scale-[0.98] transition-all"
+            >
+              <span className="text-3xl">{b.emoji as string}</span>
+              <span className="font-bold text-lg flex-1">{b.label as string}</span>
+              <span className="text-gray-300 text-xl">›</span>
+            </a>
+          ))}
 
           {bookings.length === 0 && (
             <div className="text-center py-12 text-gray-300">
