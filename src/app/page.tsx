@@ -26,6 +26,7 @@ type Place = {
   dayId: string;
   name: string;
   memo: string;
+  link: string;
   category: string;
   done: boolean;
   order: number;
@@ -56,10 +57,12 @@ export default function Home() {
   const [newPlace, setNewPlace] = useState("");
   const [newMemo, setNewMemo] = useState("");
   const [newCategory, setNewCategory] = useState("food");
+  const [newLink, setNewLink] = useState("");
   const [editingPlace, setEditingPlace] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editMemo, setEditMemo] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editLink, setEditLink] = useState("");
 
   // 실시간 동기화 - days
   useEffect(() => {
@@ -115,6 +118,7 @@ export default function Home() {
       dayId: selectedDay,
       name: newPlace,
       memo: newMemo,
+      link: newLink,
       category: newCategory,
       done: false,
       order: dayPlaces.length,
@@ -122,6 +126,7 @@ export default function Home() {
     });
     setNewPlace("");
     setNewMemo("");
+    setNewLink("");
     setNewCategory("food");
     setShowAddPlace(false);
   };
@@ -138,6 +143,7 @@ export default function Home() {
     setEditingPlace(place.id);
     setEditName(place.name);
     setEditMemo(place.memo);
+    setEditLink(place.link || "");
     setEditCategory(place.category);
   };
 
@@ -145,6 +151,7 @@ export default function Home() {
     await updateDoc(doc(db, "places", placeId), {
       name: editName,
       memo: editMemo,
+      link: editLink,
       category: editCategory,
     });
     setEditingPlace(null);
@@ -283,6 +290,13 @@ export default function Home() {
                   placeholder="메모"
                   className="w-full border rounded-xl px-3 py-2 text-sm"
                 />
+                <input
+                  type="url"
+                  value={editLink}
+                  onChange={(e) => setEditLink(e.target.value)}
+                  placeholder="구글맵 링크 (선택)"
+                  className="w-full border rounded-xl px-3 py-2 text-sm"
+                />
                 <div className="flex gap-1 flex-wrap">
                   {CATEGORIES.map((cat) => (
                     <button
@@ -337,6 +351,17 @@ export default function Home() {
                   {place.memo && (
                     <p className="text-sm text-gray-400 mt-1 ml-7">{place.memo}</p>
                   )}
+                  {place.link && (
+                    <a
+                      href={place.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-xs text-blue-500 mt-1 ml-7 hover:underline"
+                    >
+                      📍 지도 보기
+                    </a>
+                  )}
                 </div>
                 <button
                   onClick={() => deletePlace(place.id)}
@@ -370,6 +395,13 @@ export default function Home() {
               onChange={(e) => setNewMemo(e.target.value)}
               className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
             />
+            <input
+              type="url"
+              placeholder="구글맵 링크 (선택)"
+              value={newLink}
+              onChange={(e) => setNewLink(e.target.value)}
+              className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
+            />
             <div className="flex gap-1 flex-wrap mb-4">
               {CATEGORIES.map((cat) => (
                 <button
@@ -391,6 +423,7 @@ export default function Home() {
                   setShowAddPlace(false);
                   setNewPlace("");
                   setNewMemo("");
+                  setNewLink("");
                 }}
                 className="flex-1 py-3 rounded-xl border text-gray-500"
               >
