@@ -41,6 +41,15 @@ type Booking = {
   [key: string]: unknown;
 };
 
+type Wish = {
+  id: string;
+  name: string;
+  memo: string;
+  link: string;
+  category: string;
+  createdAt: Timestamp;
+};
+
 const CATEGORIES = [
   { value: "food", label: "맛집", emoji: "🍜" },
   { value: "spot", label: "관광", emoji: "⛩️" },
@@ -65,11 +74,17 @@ export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
-  const [activeTab, setActiveTab] = useState<"schedule" | "bookings">("schedule");
+  const [activeTab, setActiveTab] = useState<"schedule" | "wishes" | "bookings">("schedule");
 
   const [days, setDays] = useState<TripDay[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [wishes, setWishes] = useState<Wish[]>([]);
+  const [showAddWish, setShowAddWish] = useState(false);
+  const [newWishName, setNewWishName] = useState("");
+  const [newWishMemo, setNewWishMemo] = useState("");
+  const [newWishLink, setNewWishLink] = useState("");
+  const [newWishCategory, setNewWishCategory] = useState("food");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showAddDay, setShowAddDay] = useState(false);
   const [newDate, setNewDate] = useState("");
@@ -172,6 +187,51 @@ export default function Home() {
     });
     return () => unsub();
   }, [isUnlocked]);
+
+  // 실시간 동기화 - wishes
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const q = query(collection(db, "wishes"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setWishes(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Wish)));
+    });
+    return () => unsub();
+  }, [isUnlocked]);
+
+  const addWish = async () => {
+    if (!newWishName) return;
+    await addDoc(collection(db, "wishes"), {
+      name: newWishName,
+      memo: newWishMemo,
+      link: newWishLink,
+      category: newWishCategory,
+      createdAt: Timestamp.now(),
+    });
+    setNewWishName("");
+    setNewWishMemo("");
+    setNewWishLink("");
+    setNewWishCategory("food");
+    setShowAddWish(false);
+  };
+
+  const deleteWish = async (wishId: string) => {
+    await deleteDoc(doc(db, "wishes", wishId));
+  };
+
+  const moveWishToDay = async (wish: Wish, dayId: string) => {
+    const dayPlaces = places.filter((p) => p.dayId === dayId);
+    await addDoc(collection(db, "places"), {
+      dayId,
+      name: wish.name,
+      memo: wish.memo,
+      link: wish.link,
+      category: wish.category,
+      done: false,
+      order: dayPlaces.length,
+      createdAt: Timestamp.now(),
+    });
+    await deleteDoc(doc(db, "wishes", wish.id));
+  };
 
   const addDay = async () => {
     if (!newDate) return;
@@ -329,6 +389,16 @@ export default function Home() {
           📅 일정
         </button>
         <button
+          onClick={() => setActiveTab("wishes")}
+          className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "wishes"
+              ? "bg-white text-gray-800 shadow-sm"
+              : "text-gray-400"
+          }`}
+        >
+          💛 가고싶은 곳
+        </button>
+        <button
           onClick={() => setActiveTab("bookings")}
           className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
             activeTab === "bookings"
@@ -336,9 +406,146 @@ export default function Home() {
               : "text-gray-400"
           }`}
         >
-          🎫 예약정보
+          🎫 예약
         </button>
       </div>
+
+      {/* ===== 가고싶은 곳 탭 ===== */}
+      {activeTab === "wishes" && (
+        <>
+          <div className="space-y-3">
+            {wishes.map((w) => (
+              <div
+                key={w.id}
+                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl mt-0.5">
+                    {getCategoryEmoji(w.category)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{w.name}</span>
+                    {w.memo && (
+                      <p className="text-sm text-gray-400 mt-0.5">{w.memo}</p>
+                    )}
+                    {w.link && (
+                      <a
+                        href={w.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-500 mt-1 hover:underline"
+                      >
+                        📍 지도 보기
+                      </a>
+                    )}
+                    {/* 일정에 넣기 버튼 */}
+                    {days.length > 0 && (
+                      <div className="flex gap-1 flex-wrap mt-2">
+                        {days.map((day, idx) => (
+                          <button
+                            key={day.id}
+                            onClick={() => moveWishToDay(w, day.id)}
+                            className="px-2 py-1 rounded-lg text-xs bg-gray-100 text-gray-500 hover:bg-red-500 hover:text-white transition-all"
+                          >
+                            Day {idx + 1}에 넣기
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteWish(w.id)}
+                    className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {wishes.length === 0 && (
+              <div className="text-center py-12 text-gray-300">
+                <p className="text-4xl mb-2">💛</p>
+                <p>가고싶은 곳을 추가해보세요</p>
+                <p className="text-sm">나중에 일정에 넣을 수 있어요!</p>
+              </div>
+            )}
+          </div>
+
+          {/* 위시 추가 모달 */}
+          {showAddWish && (
+            <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+              <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-sm shadow-xl">
+                <h3 className="text-lg font-bold mb-4">가고싶은 곳 추가</h3>
+                <input
+                  type="text"
+                  placeholder="장소 이름"
+                  value={newWishName}
+                  onChange={(e) => setNewWishName(e.target.value)}
+                  className="w-full border rounded-xl px-4 py-3 mb-3 text-base"
+                  autoFocus
+                />
+                <input
+                  type="text"
+                  placeholder="메모 (선택)"
+                  value={newWishMemo}
+                  onChange={(e) => setNewWishMemo(e.target.value)}
+                  className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
+                />
+                <input
+                  type="url"
+                  placeholder="구글맵 링크 (선택)"
+                  value={newWishLink}
+                  onChange={(e) => setNewWishLink(e.target.value)}
+                  className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
+                />
+                <div className="flex gap-1 flex-wrap mb-4">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.value}
+                      onClick={() => setNewWishCategory(cat.value)}
+                      className={`px-3 py-1.5 rounded-full text-xs transition-all ${
+                        newWishCategory === cat.value
+                          ? "bg-red-500 text-white"
+                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {cat.emoji} {cat.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowAddWish(false);
+                      setNewWishName("");
+                      setNewWishMemo("");
+                      setNewWishLink("");
+                    }}
+                    className="flex-1 py-3 rounded-xl border text-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={addWish}
+                    className="flex-1 py-3 rounded-xl bg-red-500 text-white font-medium"
+                  >
+                    추가
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 하단 추가 버튼 */}
+          <button
+            onClick={() => setShowAddWish(true)}
+            className="fixed bottom-6 right-6 w-14 h-14 bg-red-500 text-white rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-red-600 transition-all hover:scale-105 active:scale-95"
+          >
+            +
+          </button>
+        </>
+      )}
 
       {/* ===== 예약정보 탭 ===== */}
       {activeTab === "bookings" && (
