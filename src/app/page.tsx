@@ -63,11 +63,33 @@ function getCategoryEmoji(cat: string) {
   return CATEGORIES.find((c) => c.value === cat)?.emoji || "📌";
 }
 
-// PIN 해시 (7376의 SHA-256)
-const PIN_HASH = "a]7376[z"; // 간단한 검증용
-
+// PIN 검증
 function verifyPin(input: string): boolean {
   return input === "7376";
+}
+
+// 구글맵 URL에서 장소명 자동 추출
+function extractPlaceName(url: string): string | null {
+  try {
+    // /place/장소이름/ 패턴
+    const match = url.match(/\/place\/([^/@]+)/);
+    if (match) {
+      return decodeURIComponent(match[1].replace(/\+/g, " "));
+    }
+    // /search/?...query=장소이름 패턴
+    const searchMatch = url.match(/[?&]query=([^&]+)/);
+    if (searchMatch) {
+      return decodeURIComponent(searchMatch[1].replace(/\+/g, " "));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// 구글맵 URL인지 체크
+function isGoogleMapsUrl(text: string): boolean {
+  return text.includes("google.com/maps") || text.includes("maps.app.goo.gl");
 }
 
 export default function Home() {
@@ -81,9 +103,9 @@ export default function Home() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [wishes, setWishes] = useState<Wish[]>([]);
   const [showAddWish, setShowAddWish] = useState(false);
-  const [newWishName, setNewWishName] = useState("");
-  const [newWishMemo, setNewWishMemo] = useState("");
-  const [newWishLink, setNewWishLink] = useState("");
+  const [wishInput, setWishInput] = useState("");
+  const [wishParsedName, setWishParsedName] = useState("");
+  const [wishParsedLink, setWishParsedLink] = useState("");
   const [newWishCategory, setNewWishCategory] = useState("food");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showAddDay, setShowAddDay] = useState(false);
@@ -198,18 +220,32 @@ export default function Home() {
     return () => unsub();
   }, [isUnlocked]);
 
+  // 링크 붙여넣기 시 자동 파싱
+  const handleWishInput = (value: string) => {
+    setWishInput(value);
+    if (isGoogleMapsUrl(value)) {
+      const name = extractPlaceName(value);
+      setWishParsedName(name || "");
+      setWishParsedLink(value);
+    } else {
+      setWishParsedName("");
+      setWishParsedLink("");
+    }
+  };
+
   const addWish = async () => {
-    if (!newWishName) return;
+    const name = wishParsedName || wishInput;
+    if (!name) return;
     await addDoc(collection(db, "wishes"), {
-      name: newWishName,
-      memo: newWishMemo,
-      link: newWishLink,
+      name,
+      memo: "",
+      link: wishParsedLink || "",
       category: newWishCategory,
       createdAt: Timestamp.now(),
     });
-    setNewWishName("");
-    setNewWishMemo("");
-    setNewWishLink("");
+    setWishInput("");
+    setWishParsedName("");
+    setWishParsedLink("");
     setNewWishCategory("food");
     setShowAddWish(false);
   };
@@ -476,29 +512,24 @@ export default function Home() {
           {showAddWish && (
             <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
               <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-sm shadow-xl">
-                <h3 className="text-lg font-bold mb-4">가고싶은 곳 추가</h3>
+                <h3 className="text-lg font-bold mb-2">가고싶은 곳 추가</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  구글맵 링크를 붙여넣으면 이름이 자동으로 나와요
+                </p>
                 <input
                   type="text"
-                  placeholder="장소 이름"
-                  value={newWishName}
-                  onChange={(e) => setNewWishName(e.target.value)}
+                  placeholder="구글맵 링크 붙여넣기 or 장소 이름"
+                  value={wishInput}
+                  onChange={(e) => handleWishInput(e.target.value)}
                   className="w-full border rounded-xl px-4 py-3 mb-3 text-base"
                   autoFocus
                 />
-                <input
-                  type="text"
-                  placeholder="메모 (선택)"
-                  value={newWishMemo}
-                  onChange={(e) => setNewWishMemo(e.target.value)}
-                  className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
-                />
-                <input
-                  type="url"
-                  placeholder="구글맵 링크 (선택)"
-                  value={newWishLink}
-                  onChange={(e) => setNewWishLink(e.target.value)}
-                  className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
-                />
+                {wishParsedName && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-3">
+                    <p className="text-xs text-green-500 mb-1">자동 인식됨</p>
+                    <p className="font-medium text-green-800">{wishParsedName}</p>
+                  </div>
+                )}
                 <div className="flex gap-1 flex-wrap mb-4">
                   {CATEGORIES.map((cat) => (
                     <button
@@ -518,9 +549,9 @@ export default function Home() {
                   <button
                     onClick={() => {
                       setShowAddWish(false);
-                      setNewWishName("");
-                      setNewWishMemo("");
-                      setNewWishLink("");
+                      setWishInput("");
+                      setWishParsedName("");
+                      setWishParsedLink("");
                     }}
                     className="flex-1 py-3 rounded-xl border text-gray-500"
                   >
