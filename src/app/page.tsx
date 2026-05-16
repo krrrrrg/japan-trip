@@ -89,7 +89,11 @@ function extractPlaceName(url: string): string | null {
 
 // 구글맵 URL인지 체크
 function isGoogleMapsUrl(text: string): boolean {
-  return text.includes("google.com/maps") || text.includes("maps.app.goo.gl");
+  return (
+    text.includes("google.com/maps") ||
+    text.includes("maps.app.goo.gl") ||
+    text.includes("share.google")
+  );
 }
 
 export default function Home() {
@@ -106,6 +110,7 @@ export default function Home() {
   const [wishInput, setWishInput] = useState("");
   const [wishParsedName, setWishParsedName] = useState("");
   const [wishParsedLink, setWishParsedLink] = useState("");
+  const [wishLoading, setWishLoading] = useState(false);
   const [newWishCategory, setNewWishCategory] = useState("food");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showAddDay, setShowAddDay] = useState(false);
@@ -220,13 +225,33 @@ export default function Home() {
     return () => unsub();
   }, [isUnlocked]);
 
-  // 링크 붙여넣기 시 자동 파싱
-  const handleWishInput = (value: string) => {
+  // 링크 붙여넣기 시 서버에서 장소명 가져오기
+  const handleWishInput = async (value: string) => {
     setWishInput(value);
     if (isGoogleMapsUrl(value)) {
-      const name = extractPlaceName(value);
-      setWishParsedName(name || "");
       setWishParsedLink(value);
+      setWishLoading(true);
+      // 먼저 URL에서 빠르게 파싱 시도
+      const quickName = extractPlaceName(value);
+      if (quickName) setWishParsedName(quickName);
+      // 서버 API로 정확한 한국어 이름 가져오기
+      try {
+        const res = await fetch("/api/place-name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: value }),
+        });
+        const data = await res.json();
+        if (data.name) {
+          setWishParsedName(data.name);
+        }
+        if (data.finalUrl) {
+          setWishParsedLink(data.finalUrl);
+        }
+      } catch {
+        // API 실패해도 URL 파싱된 이름은 유지
+      }
+      setWishLoading(false);
     } else {
       setWishParsedName("");
       setWishParsedLink("");
@@ -524,14 +549,19 @@ export default function Home() {
                   className="w-full border rounded-xl px-4 py-3 mb-3 text-base"
                   autoFocus
                 />
-                {wishParsedLink && (
+                {wishLoading && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-3 text-center">
+                    <p className="text-sm text-blue-500">장소 이름 가져오는 중...</p>
+                  </div>
+                )}
+                {!wishLoading && wishParsedLink && (
                   <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-3">
-                    <p className="text-xs text-green-500 mb-1">링크 인식 완료! 이름을 수정하세요</p>
+                    <p className="text-xs text-green-500 mb-1">장소 인식 완료!</p>
                     <input
                       type="text"
                       value={wishParsedName}
                       onChange={(e) => setWishParsedName(e.target.value)}
-                      placeholder="한국어 이름 입력"
+                      placeholder="이름 수정 가능"
                       className="w-full bg-white border border-green-200 rounded-lg px-3 py-2 text-base font-medium mt-1"
                     />
                   </div>
