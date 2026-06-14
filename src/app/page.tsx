@@ -523,6 +523,16 @@ export default function Home() {
   const currentPlaces = places.filter((p) => p.dayId === selectedDay);
   const currentDay = days.find((d) => d.id === selectedDay);
 
+  // 목록 정렬: 시간 있는 장소 먼저(시간순) → 시간 미정은 가나다순으로 맨 아래
+  const sortedListPlaces = [...currentPlaces].sort((a, b) => {
+    const ta = timeToMin(a.time);
+    const tb = timeToMin(b.time);
+    if (ta !== null && tb !== null) return ta - tb;
+    if (ta !== null) return -1;
+    if (tb !== null) return 1;
+    return a.name.localeCompare(b.name, "ko");
+  });
+
   // 라이트박스(전체화면 뷰어) 데이터 — photos가 실시간 갱신되어도 따라가도록 파생
   const lightboxPhotos = lightbox
     ? photos.filter((ph) => ph.placeId === lightbox.placeId)
@@ -927,7 +937,7 @@ export default function Home() {
 
           {scheduleView === "list" && (
           <div className="space-y-3">
-            {currentPlaces.map((place) => (
+            {sortedListPlaces.map((place) => (
               <div
                 key={place.id}
                 className={`bg-white rounded-2xl p-4 shadow-sm border transition-all ${
