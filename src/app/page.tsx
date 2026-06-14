@@ -30,6 +30,8 @@ type Place = {
   category: string;
   done: boolean;
   order: number;
+  time?: string;
+  endTime?: string;
   createdAt: Timestamp;
 };
 
@@ -69,6 +71,31 @@ const CATEGORIES = [
 
 function getCategoryEmoji(cat: string) {
   return CATEGORIES.find((c) => c.value === cat)?.emoji || "📌";
+}
+
+// 타임테이블 블록 색상 (카테고리별)
+const CATEGORY_COLORS: Record<string, string> = {
+  food: "bg-orange-100 border-orange-300 text-orange-800",
+  spot: "bg-emerald-100 border-emerald-300 text-emerald-800",
+  shopping: "bg-pink-100 border-pink-300 text-pink-800",
+  hotel: "bg-indigo-100 border-indigo-300 text-indigo-800",
+  transport: "bg-sky-100 border-sky-300 text-sky-800",
+  etc: "bg-gray-100 border-gray-300 text-gray-700",
+};
+
+function getCategoryColor(cat: string) {
+  return CATEGORY_COLORS[cat] || CATEGORY_COLORS.etc;
+}
+
+// "HH:MM" → 분 단위 숫자. 잘못된 값이면 null
+function timeToMin(t?: string): number | null {
+  if (!t) return null;
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
 }
 
 // PIN 검증
@@ -167,11 +194,16 @@ export default function Home() {
   const [newMemo, setNewMemo] = useState("");
   const [newCategory, setNewCategory] = useState("food");
   const [newLink, setNewLink] = useState("");
+  const [newTime, setNewTime] = useState("");
+  const [newEndTime, setNewEndTime] = useState("");
   const [editingPlace, setEditingPlace] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editMemo, setEditMemo] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editLink, setEditLink] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editEndTime, setEditEndTime] = useState("");
+  const [scheduleView, setScheduleView] = useState<"list" | "timeline">("list");
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
@@ -395,12 +427,16 @@ export default function Home() {
       category: newCategory,
       done: false,
       order: dayPlaces.length,
+      time: newTime,
+      endTime: newEndTime,
       createdAt: Timestamp.now(),
     });
     setNewPlace("");
     setNewMemo("");
     setNewLink("");
     setNewCategory("food");
+    setNewTime("");
+    setNewEndTime("");
     setShowAddPlace(false);
   };
 
@@ -422,6 +458,8 @@ export default function Home() {
     setEditMemo(place.memo);
     setEditLink(place.link || "");
     setEditCategory(place.category);
+    setEditTime(place.time || "");
+    setEditEndTime(place.endTime || "");
   };
 
   const saveEdit = async (placeId: string) => {
@@ -430,6 +468,8 @@ export default function Home() {
       memo: editMemo,
       link: editLink,
       category: editCategory,
+      time: editTime,
+      endTime: editEndTime,
     });
     setEditingPlace(null);
   };
@@ -840,6 +880,32 @@ export default function Home() {
             </div>
           )}
 
+          {/* 목록 / 타임테이블 전환 */}
+          {currentDay && (
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4 w-fit">
+              <button
+                onClick={() => setScheduleView("list")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  scheduleView === "list"
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400"
+                }`}
+              >
+                ☰ 목록
+              </button>
+              <button
+                onClick={() => setScheduleView("timeline")}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  scheduleView === "timeline"
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400"
+                }`}
+              >
+                ⏱ 타임테이블
+              </button>
+            </div>
+          )}
+
           {/* 장소 리스트 */}
           {currentPlaces.length === 0 && selectedDay && (
             <div className="text-center py-12 text-gray-300">
@@ -859,6 +925,7 @@ export default function Home() {
             </div>
           )}
 
+          {scheduleView === "list" && (
           <div className="space-y-3">
             {currentPlaces.map((place) => (
               <div
@@ -891,6 +958,26 @@ export default function Home() {
                       placeholder="구글맵 링크 (선택)"
                       className="w-full border rounded-xl px-3 py-2 text-sm"
                     />
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 ml-1">시작 시간</label>
+                        <input
+                          type="time"
+                          value={editTime}
+                          onChange={(e) => setEditTime(e.target.value)}
+                          className="w-full border rounded-xl px-3 py-2 text-sm mt-0.5"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-400 ml-1">종료 (선택)</label>
+                        <input
+                          type="time"
+                          value={editEndTime}
+                          onChange={(e) => setEditEndTime(e.target.value)}
+                          className="w-full border rounded-xl px-3 py-2 text-sm mt-0.5"
+                        />
+                      </div>
+                    </div>
                     <div className="flex gap-1 flex-wrap">
                       {CATEGORIES.map((cat) => (
                         <button
@@ -938,6 +1025,12 @@ export default function Home() {
                       onClick={() => startEdit(place)}
                     >
                       <div className="flex items-center gap-2">
+                        {place.time && (
+                          <span className="text-xs font-semibold text-red-500 bg-red-50 rounded-md px-1.5 py-0.5 flex-shrink-0">
+                            {place.time}
+                            {place.endTime ? `~${place.endTime}` : ""}
+                          </span>
+                        )}
                         <span className="text-base">
                           {getCategoryEmoji(place.category)}
                         </span>
@@ -1010,6 +1103,141 @@ export default function Home() {
               </div>
             ))}
           </div>
+          )}
+
+          {/* ===== 타임테이블(간트) 뷰 ===== */}
+          {scheduleView === "timeline" &&
+            selectedDay &&
+            currentPlaces.length > 0 &&
+            (() => {
+              const timed = currentPlaces
+                .map((p) => ({ p, start: timeToMin(p.time) }))
+                .filter((x): x is { p: Place; start: number } => x.start !== null)
+                .sort((a, b) => a.start - b.start);
+              const untimed = currentPlaces.filter(
+                (p) => timeToMin(p.time) === null
+              );
+
+              if (timed.length === 0) {
+                return (
+                  <div className="text-center py-10 px-4 text-gray-400 bg-gray-50 rounded-2xl">
+                    <p className="text-3xl mb-2">⏱</p>
+                    <p className="text-sm">
+                      아직 시간을 입력한 장소가 없어요.
+                    </p>
+                    <p className="text-xs mt-1 text-gray-300">
+                      장소를 눌러 시작 시간을 넣으면 여기에 타임테이블로 표시돼요.
+                    </p>
+                  </div>
+                );
+              }
+
+              // 각 일정의 종료 시각 계산 (명시 종료 → 다음 일정 시작 → +90분)
+              const segs = timed.map((x, i) => {
+                let end = timeToMin(x.p.endTime);
+                if (end === null || end <= x.start) {
+                  end =
+                    i < timed.length - 1
+                      ? timed[i + 1].start
+                      : x.start + 90;
+                }
+                return { p: x.p, start: x.start, end };
+              });
+
+              const minStart = Math.floor(segs[0].start / 60) * 60;
+              const maxEnd =
+                Math.ceil(Math.max(...segs.map((s) => s.end)) / 60) * 60;
+              const ppm = 1.3; // 분당 픽셀
+              const totalH = (maxEnd - minStart) * ppm;
+              const hours: number[] = [];
+              for (let h = minStart; h <= maxEnd; h += 60) hours.push(h);
+              const fmtHour = (h: number) =>
+                `${String(Math.floor(h / 60)).padStart(2, "0")}:00`;
+
+              return (
+                <>
+                  <p className="text-xs text-gray-300 mb-2">
+                    블록을 누르면 수정할 수 있어요
+                  </p>
+                  <div className="relative" style={{ height: totalH }}>
+                    {/* 시간 눈금 */}
+                    {hours.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute left-0 right-0 flex items-start"
+                        style={{ top: (h - minStart) * ppm }}
+                      >
+                        <span className="text-[11px] text-gray-400 w-12 flex-shrink-0 -mt-2">
+                          {fmtHour(h)}
+                        </span>
+                        <div className="flex-1 border-t border-gray-100" />
+                      </div>
+                    ))}
+                    {/* 일정 블록 */}
+                    {segs.map((seg) => {
+                      const top = (seg.start - minStart) * ppm;
+                      const height = Math.max((seg.end - seg.start) * ppm, 36);
+                      return (
+                        <div
+                          key={seg.p.id}
+                          onClick={() => {
+                            startEdit(seg.p);
+                            setScheduleView("list");
+                          }}
+                          className={`absolute rounded-lg border px-2 py-1 overflow-hidden cursor-pointer active:scale-[0.98] transition-all ${getCategoryColor(
+                            seg.p.category
+                          )} ${seg.p.done ? "opacity-50" : ""}`}
+                          style={{
+                            top,
+                            height: height - 4,
+                            left: 56,
+                            right: 4,
+                          }}
+                        >
+                          <div className="flex items-center gap-1 text-xs font-semibold">
+                            <span>{getCategoryEmoji(seg.p.category)}</span>
+                            <span
+                              className={`truncate ${
+                                seg.p.done ? "line-through" : ""
+                              }`}
+                            >
+                              {seg.p.name}
+                            </span>
+                          </div>
+                          <span className="text-[10px] opacity-70">
+                            {seg.p.time}
+                            {seg.p.endTime ? `~${seg.p.endTime}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 시간 미정 장소 */}
+                  {untimed.length > 0 && (
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                      <p className="text-xs text-gray-400 mb-2">⏰ 시간 미정</p>
+                      <div className="flex flex-wrap gap-2">
+                        {untimed.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              startEdit(p);
+                              setScheduleView("list");
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs border ${getCategoryColor(
+                              p.category
+                            )}`}
+                          >
+                            {getCategoryEmoji(p.category)} {p.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
           {/* 장소 추가 모달 */}
           {showAddPlace && (
@@ -1038,6 +1266,26 @@ export default function Home() {
                   onChange={(e) => setNewLink(e.target.value)}
                   className="w-full border rounded-xl px-4 py-3 mb-3 text-sm"
                 />
+                <div className="flex gap-2 mb-3">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400 ml-1">시작 시간</label>
+                    <input
+                      type="time"
+                      value={newTime}
+                      onChange={(e) => setNewTime(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-2.5 text-sm mt-0.5"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-400 ml-1">종료 (선택)</label>
+                    <input
+                      type="time"
+                      value={newEndTime}
+                      onChange={(e) => setNewEndTime(e.target.value)}
+                      className="w-full border rounded-xl px-3 py-2.5 text-sm mt-0.5"
+                    />
+                  </div>
+                </div>
                 <div className="flex gap-1 flex-wrap mb-4">
                   {CATEGORIES.map((cat) => (
                     <button
@@ -1060,6 +1308,8 @@ export default function Home() {
                       setNewPlace("");
                       setNewMemo("");
                       setNewLink("");
+                      setNewTime("");
+                      setNewEndTime("");
                     }}
                     className="flex-1 py-3 rounded-xl border text-gray-500"
                   >
