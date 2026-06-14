@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -29,6 +29,14 @@ type Place = {
   link: string;
   category: string;
   done: boolean;
+  order: number;
+  createdAt: Timestamp;
+};
+
+type Photo = {
+  id: string;
+  placeId: string;
+  dataUrl: string;
   order: number;
   createdAt: Timestamp;
 };
@@ -96,6 +104,44 @@ function isGoogleMapsUrl(text: string): boolean {
   );
 }
 
+// 이미지를 캔버스로 리사이즈/압축해서 data URL로 변환 (Firestore 저장용)
+function compressImage(
+  file: File,
+  maxDim = 1280,
+  quality = 0.7
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height >= width && height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("canvas context 없음"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
@@ -126,6 +172,12 @@ export default function Home() {
   const [editMemo, setEditMemo] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editLink, setEditLink] = useState("");
+
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [photoTargetPlace, setPhotoTargetPlace] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ placeId: string; index: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 세션 체크
   useEffect(() => {
@@ -225,6 +277,16 @@ export default function Home() {
     return () => unsub();
   }, [isUnlocked]);
 
+  // 실시간 동기화 - photos
+  useEffect(() => {
+    if (!isUnlocked) return;
+    const q = query(collection(db, "photos"), orderBy("order", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setPhotos(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Photo)));
+    });
+    return () => unsub();
+  }, [isUnlocked]);
+
   // 링크 붙여넣기 시 서버에서 장소명 가져오기
   const handleWishInput = async (value: string) => {
     setWishInput(value);
@@ -310,6 +372,10 @@ export default function Home() {
     if (!confirm("이 날짜와 모든 장소를 삭제할까요?")) return;
     const dayPlaces = places.filter((p) => p.dayId === dayId);
     for (const p of dayPlaces) {
+      const placePhotos = photos.filter((ph) => ph.placeId === p.id);
+      for (const ph of placePhotos) {
+        await deleteDoc(doc(db, "photos", ph.id));
+      }
       await deleteDoc(doc(db, "places", p.id));
     }
     await deleteDoc(doc(db, "days", dayId));
@@ -343,6 +409,10 @@ export default function Home() {
   };
 
   const deletePlace = async (placeId: string) => {
+    const placePhotos = photos.filter((ph) => ph.placeId === placeId);
+    for (const ph of placePhotos) {
+      await deleteDoc(doc(db, "photos", ph.id));
+    }
     await deleteDoc(doc(db, "places", placeId));
   };
 
@@ -364,6 +434,46 @@ export default function Home() {
     setEditingPlace(null);
   };
 
+  // 사진 추가 버튼 → 파일 선택창 열기
+  const triggerPhotoUpload = (placeId: string) => {
+    setPhotoTargetPlace(placeId);
+    fileInputRef.current?.click();
+  };
+
+  // 선택한 사진들을 압축 후 Firestore에 저장
+  const handlePhotoFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    const targetPlace = photoTargetPlace;
+    if (!files || files.length === 0 || !targetPlace) {
+      e.target.value = "";
+      return;
+    }
+    setUploadingFor(targetPlace);
+    let offset = photos.filter((p) => p.placeId === targetPlace).length;
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        const dataUrl = await compressImage(file);
+        await addDoc(collection(db, "photos"), {
+          placeId: targetPlace,
+          dataUrl,
+          order: offset,
+          createdAt: Timestamp.now(),
+        });
+        offset++;
+      } catch {
+        // 한 장 실패해도 나머지는 계속 진행
+      }
+    }
+    setUploadingFor(null);
+    setPhotoTargetPlace(null);
+    e.target.value = "";
+  };
+
+  const deletePhoto = async (photoId: string) => {
+    await deleteDoc(doc(db, "photos", photoId));
+  };
+
   const getDayLabel = (dateStr: string) => {
     const d = new Date(dateStr);
     const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
@@ -372,6 +482,15 @@ export default function Home() {
 
   const currentPlaces = places.filter((p) => p.dayId === selectedDay);
   const currentDay = days.find((d) => d.id === selectedDay);
+
+  // 라이트박스(전체화면 뷰어) 데이터 — photos가 실시간 갱신되어도 따라가도록 파생
+  const lightboxPhotos = lightbox
+    ? photos.filter((ph) => ph.placeId === lightbox.placeId)
+    : [];
+  const lightboxIndex = lightbox
+    ? Math.min(lightbox.index, Math.max(lightboxPhotos.length - 1, 0))
+    : 0;
+  const lightboxPhoto = lightboxPhotos[lightboxIndex];
 
   // ========== PIN 잠금 화면 ==========
   if (!isUnlocked) {
@@ -846,6 +965,39 @@ export default function Home() {
                           📍 지도 보기
                         </a>
                       )}
+
+                      {/* 사진 썸네일 + 추가 버튼 */}
+                      <div className="ml-7 mt-2 flex gap-2 flex-wrap">
+                        {photos
+                          .filter((ph) => ph.placeId === place.id)
+                          .map((ph, idx) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={ph.id}
+                              src={ph.dataUrl}
+                              alt=""
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLightbox({ placeId: place.id, index: idx });
+                              }}
+                              className="w-16 h-16 object-cover rounded-lg cursor-pointer border border-gray-100 active:scale-95 transition-all"
+                            />
+                          ))}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerPhotoUpload(place.id);
+                          }}
+                          disabled={uploadingFor === place.id}
+                          className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-200 text-gray-300 flex items-center justify-center text-xl hover:border-red-300 hover:text-red-400 transition-all disabled:opacity-50"
+                        >
+                          {uploadingFor === place.id ? (
+                            <span className="text-xs animate-pulse">업로드중</span>
+                          ) : (
+                            "📷"
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <button
                       onClick={() => deletePlace(place.id)}
@@ -934,6 +1086,101 @@ export default function Home() {
             </button>
           )}
         </>
+      )}
+
+      {/* 사진 업로드용 숨겨진 파일 입력 (장소별 공용) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handlePhotoFiles}
+        className="hidden"
+      />
+
+      {/* 전체화면 사진 뷰어 */}
+      {lightbox && lightboxPhoto && (
+        <div
+          className="fixed inset-0 bg-black/95 z-[60] flex flex-col items-center justify-center"
+          onClick={() => setLightbox(null)}
+        >
+          {/* 닫기 */}
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white text-xl flex items-center justify-center active:scale-95"
+          >
+            ✕
+          </button>
+
+          {/* 사진 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxPhoto.dataUrl}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[78vh] max-w-[92vw] object-contain rounded-lg"
+          />
+
+          {/* 카운터 */}
+          {lightboxPhotos.length > 1 && (
+            <p className="text-white/70 text-sm mt-4">
+              {lightboxIndex + 1} / {lightboxPhotos.length}
+            </p>
+          )}
+
+          {/* 이전/다음 */}
+          {lightboxPhotos.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox({
+                    placeId: lightbox.placeId,
+                    index:
+                      (lightboxIndex - 1 + lightboxPhotos.length) %
+                      lightboxPhotos.length,
+                  });
+                }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl flex items-center justify-center active:scale-95"
+              >
+                ‹
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox({
+                    placeId: lightbox.placeId,
+                    index: (lightboxIndex + 1) % lightboxPhotos.length,
+                  });
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl flex items-center justify-center active:scale-95"
+              >
+                ›
+              </button>
+            </>
+          )}
+
+          {/* 삭제 */}
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (!confirm("이 사진을 삭제할까요?")) return;
+              const remaining = lightboxPhotos.length - 1;
+              await deletePhoto(lightboxPhoto.id);
+              if (remaining <= 0) {
+                setLightbox(null);
+              } else {
+                setLightbox({
+                  placeId: lightbox.placeId,
+                  index: Math.min(lightboxIndex, remaining - 1),
+                });
+              }
+            }}
+            className="absolute bottom-6 px-5 py-2.5 rounded-full bg-red-500/90 text-white text-sm font-medium active:scale-95"
+          >
+            🗑 사진 삭제
+          </button>
+        </div>
       )}
     </div>
   );
